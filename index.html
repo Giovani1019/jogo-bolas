@@ -1,0 +1,318 @@
+
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Catch the Falling Objects Game</title>
+<style>
+  /* Reset and base */
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #fff;
+    overflow: hidden;
+    user-select: none;
+  }
+  #game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    cursor: none;
+  }
+  canvas {
+    display: block;
+    background: linear-gradient(to bottom, #1e1e2f, #28304e);
+    margin: 0 auto;
+    box-shadow: 0 0 20px rgba(118, 75, 162, 0.8);
+    border-radius: 15px;
+  }
+  #scoreboard {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-shadow: 0 0 10px #764ba2;
+  }
+  #game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3rem;
+    font-weight: 900;
+    color: #ff4d6d;
+    text-align: center;
+    text-shadow: 0 0 20px #ff4d6d;
+    display: none;
+  }
+  #restart-btn {
+    margin-top: 1rem;
+    padding: 0.75rem 2rem;
+    font-size: 1.25rem;
+    background: #ff4d6d;
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 0 20px #ff4d6d;
+    transition: background 0.3s ease;
+  }
+  #restart-btn:hover {
+    background: #e04362;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas" width="480" height="640" aria-label="Catch the Falling Objects Game"></canvas>
+  <div id="scoreboard">Score: 0 | Lives: 3</div>
+  <div id="game-over">
+    Game Over<br />
+    <button id="restart-btn" aria-label="Restart Game">Restart</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const scoreboard = document.getElementById('scoreboard');
+  const gameOverScreen = document.getElementById('game-over');
+  const restartBtn = document.getElementById('restart-btn');
+
+  const WIDTH = canvas.width;
+  const HEIGHT = canvas.height;
+
+  // Player properties
+  const playerWidth = 80;
+  const playerHeight = 20;
+  const playerColor = '#764ba2';
+  const playerShadowColor = 'rgba(118, 75, 162, 0.7)';
+  let playerX = (WIDTH - playerWidth) / 2;
+  const playerY = HEIGHT - playerHeight - 20;
+  const playerSpeed = 7;
+
+  // Falling objects properties
+  const objectRadius = 15;
+  const objectColor = '#ff4d6d';
+  const objectShadowColor = 'rgba(255, 77, 109, 0.7)';
+  const maxObjects = 5;
+  const objectFallSpeedMin = 2;
+  const objectFallSpeedMax = 5;
+
+  // Game state
+  let score = 0;
+  let lives = 3;
+  let objects = [];
+  let keys = {};
+  let isGameOver = false;
+
+  // Hide cursor inside game container and draw a custom basket cursor
+  document.getElementById('game-container').style.cursor = 'none';
+
+  // Generate random integer between min and max inclusive
+  function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  class FallingObject {
+    constructor(x, y, speed) {
+      this.x = x;
+      this.y = y;
+      this.speed = speed;
+      this.radius = objectRadius;
+      this.caught = false;
+    }
+    update() {
+      this.y += this.speed;
+    }
+    draw() {
+      // shadow
+      ctx.beginPath();
+      ctx.arc(this.x, this.y + 3, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = objectShadowColor;
+      ctx.fill();
+      ctx.closePath();
+
+      // main circle
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      const gradient = ctx.createRadialGradient(this.x - 5, this.y - 5, this.radius/4, this.x, this.y, this.radius);
+      gradient.addColorStop(0, '#ff758c');
+      gradient.addColorStop(1, objectColor);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      ctx.closePath();
+    }
+  }
+
+  function createObjects() {
+    while (objects.length < maxObjects) {
+      let x = randomInt(objectRadius, WIDTH - objectRadius);
+      let y = randomInt(-HEIGHT, -objectRadius * 2);
+      let speed = Math.random() * (objectFallSpeedMax - objectFallSpeedMin) + objectFallSpeedMin;
+      objects.push(new FallingObject(x, y, speed));
+    }
+  }
+
+  function drawPlayer() {
+    // Shadow
+    ctx.fillStyle = 'rgba(118, 75, 162, 0.5)';
+    ctx.fillRect(playerX + 5, playerY + 5, playerWidth, playerHeight);
+    // main rectangle
+    const gradient = ctx.createLinearGradient(playerX, playerY, playerX, playerY + playerHeight);
+    gradient.addColorStop(0, '#8a56d8');
+    gradient.addColorStop(1, '#482570');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(playerX, playerY, playerWidth, playerHeight);
+    // outline
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#bb8ef1';
+    ctx.strokeRect(playerX, playerY, playerWidth, playerHeight);
+  }
+
+  function drawCustomCursor() {
+    const cursorX = mouse.x;
+    const cursorY = mouse.y;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = '#ff4d6d';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = 'rgba(255, 77, 109, 0.8)';
+    ctx.shadowBlur = 10;
+    ctx.arc(cursorX, cursorY, 20, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cursorX - 10, cursorY);
+    ctx.lineTo(cursorX + 10, cursorY);
+    ctx.moveTo(cursorX, cursorY - 10);
+    ctx.lineTo(cursorX, cursorY + 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function detectCollision(obj) {
+    // Simple AABB vs circle collision
+    let closestX = Math.max(playerX, Math.min(obj.x, playerX + playerWidth));
+    let closestY = Math.max(playerY, Math.min(obj.y, playerY + playerHeight));
+    let distX = obj.x - closestX;
+    let distY = obj.y - closestY;
+    return (distX * distX + distY * distY) < (obj.radius * obj.radius);
+  }
+
+  function update() {
+    if (isGameOver) return;
+
+    // Move player left/right
+    if (keys['ArrowLeft'] || keys['a']) {
+      playerX -= playerSpeed;
+    }
+    if (keys['ArrowRight'] || keys['d']) {
+      playerX += playerSpeed;
+    }
+    // Clamp player position
+    playerX = Math.max(0, Math.min(playerX, WIDTH - playerWidth));
+
+    // Update falling objects
+    objects.forEach((obj, index) => {
+      obj.update();
+
+      if (detectCollision(obj)) {
+        score++;
+        objects.splice(index, 1);
+      } else if (obj.y - obj.radius > HEIGHT) {
+        lives--;
+        objects.splice(index, 1);
+        if (lives <= 0) {
+          gameOver();
+        }
+      }
+    });
+
+    createObjects();
+
+    updateScoreboard();
+  }
+
+  function updateScoreboard() {
+    scoreboard.textContent = `Score: ${score} | Lives: ${lives}`;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    // Draw falling objects
+    objects.forEach(obj => obj.draw());
+
+    // Draw player basket
+    drawPlayer();
+
+    // Draw custom cursor
+    drawCustomCursor();
+  }
+
+  function loop() {
+    update();
+    draw();
+    if (!isGameOver) {
+      requestAnimationFrame(loop);
+    }
+  }
+
+  function gameOver() {
+    isGameOver = true;
+    gameOverScreen.style.display = 'block';
+  }
+
+  function restartGame() {
+    score = 0;
+    lives = 3;
+    objects = [];
+    isGameOver = false;
+    gameOverScreen.style.display = 'none';
+    playerX = (WIDTH - playerWidth) / 2;
+    createObjects();
+    loop();
+  }
+
+  // Keyboard input
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key] = false;
+  });
+
+  // Mouse movement to control player horizontally
+  const mouse = { x: WIDTH / 2, y: HEIGHT / 2 };
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    // Move player with the mouse X, center the basket on cursor
+    playerX = mouse.x - playerWidth / 2;
+    playerX = Math.max(0, Math.min(playerX, WIDTH - playerWidth));
+  });
+
+  restartBtn.addEventListener('click', restartGame);
+
+  // Initialize game
+  createObjects();
+  loop();
+})();
+</script>
+</body>
+</html>
